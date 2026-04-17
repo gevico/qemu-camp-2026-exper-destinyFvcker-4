@@ -1,0 +1,8 @@
+Diagnostics:
+  UnusedIncludes: None
+---
+If:
+  PathMatch: .*\.h
+  PathExclude: (build|build-rust|subprojects)/.*
+CompileFlags:
+  Add: [-include, qemu/osdep.h]

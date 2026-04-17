@@ -1,0 +1,9 @@
+{
+  "clangd.arguments": ["--compile-commands-dir=${workspaceFolder}/build-rust"],
+  "rust-analyzer.linkedProjects": [
+    "${workspaceFolder}/build-rust/rust-project.json"
+  ],
+  "rust-analyzer.cargo.extraEnv": {
+    "MESON_BUILD_ROOT": "${workspaceFolder}/build-rust"
+  }
+}

@@ -5,12 +5,12 @@
 #include <semaphore.h>
 
 struct QemuMutex {
-    pthread_mutex_t lock;
+  pthread_mutex_t lock;
 #ifdef CONFIG_DEBUG_MUTEX
-    const char *file;
-    int line;
+  const char *file;
+  int line;
 #endif
-    bool initialized;
+  bool initialized;
 };
 
 /*
@@ -18,22 +18,22 @@ struct QemuMutex {
  * compatible cases in _Generic.  See qemu/lockable.h.
  */
 typedef struct QemuRecMutex {
-    QemuMutex m;
+  QemuMutex m;
 } QemuRecMutex;
 
 struct QemuCond {
-    pthread_cond_t cond;
-    bool initialized;
+  pthread_cond_t cond;
+  bool initialized;
 };
 
 struct QemuSemaphore {
-    QemuMutex mutex;
-    QemuCond cond;
-    unsigned int count;
+  QemuMutex mutex;
+  struct QemuCond cond;
+  unsigned int count;
 };
 
 struct QemuThread {
-    pthread_t thread;
+  pthread_t thread;
 };
 
 #endif
