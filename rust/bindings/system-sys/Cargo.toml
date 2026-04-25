@@ -19,6 +19,7 @@ glib-sys = { workspace = true }
 common = { path = "../../common" }
 migration-sys = { path = "../migration-sys" }
 util-sys = { path = "../util-sys" }
+hwcore-sys = { path = "../hwcore-sys" }
 qom-sys = { path = "../qom-sys" }
 
 [lints]
