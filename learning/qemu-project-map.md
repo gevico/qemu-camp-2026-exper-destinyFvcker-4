@@ -86,6 +86,42 @@ flowchart TD
 - 设备模型是 QEMU 最中心的工作内容之一。
 - 官方文档现在仍然持续覆盖 `virtio`、`CXL`、`SR-IOV`、设备规格与内部 API。
 
+### 补充：`Rust in QEMU` 当前最先瞄准哪类设备
+
+`docs/devel/rust.rst` 里说：
+
+> Right now, the focus is on making it possible to write devices that inherit from `SysBusDevice` in *safe* Rust.
+
+这句话的意思不是“现在 QEMU 已经能用 Rust 重写所有设备”，而是说：**当前 Rust 支持的优先目标，是让开发者能用安全 Rust 写一类继承 `SysBusDevice` 的 QEMU 设备。**
+
+可以把范围图先记成：
+
+```mermaid
+flowchart TD
+    A["Rust in QEMU"] --> B["当前重点"]
+    B --> C["safe Rust 写 SysBusDevice 子类"]
+    A --> D["以后可能扩展"]
+    D --> E["PCI 设备<br/>例如可能做 DMA"]
+    D --> F["完整 board / machine"]
+    D --> G["后端<br/>例如 block device format"]
+```
+
+几个关键词要分开看：
+
+- `SysBusDevice`：QEMU 里表示“系统总线设备”的基类，常用于板级代码固定创建和映射的 `MMIO` / `IRQ` 平台设备。
+- `inherit from SysBusDevice`：新设备在 QOM（QEMU Object Model，QEMU 对象模型）类型层级里作为 `SysBusDevice` 的子类出现，类似 C 代码里写一个 `TYPE_SYS_BUS_DEVICE` 下面的具体设备类型。
+- `safe Rust`：设备作者尽量只写 Rust 安全代码，不直接暴露裸指针、未定义行为、手动生命周期管理等 `unsafe` 细节；这些危险边界由 QEMU 的 Rust 封装层兜住。
+- `PCI devices that can do DMA`：这类设备更复杂，因为 PCI（Peripheral Component Interconnect，外设部件互连）有配置空间、BAR（Base Address Register，基地址寄存器）、总线枚举等机制，DMA（Direct Memory Access，直接内存访问）还会涉及设备直接读写 guest 内存。
+- `complete boards`：指以后也许能用 Rust 描述一整块 machine / board，而不只是写单个设备。
+- `backends`：指 QEMU 设备或子系统背后的实现逻辑，例如块设备镜像格式、存储后端等。
+
+所以学习时可以把它理解成一个阶段性路线：
+
+```text
+第一阶段：先把最典型、边界相对清楚的 SysBus/MMIO 设备用 Rust 安全地写出来
+第二阶段：再考虑 PCI/DMA、整板 machine、block 后端这类更复杂的 QEMU 子系统
+```
+
 ### 3. 外置后端 / 拆进程线
 
 这条线很适合以后做“QEMU 不是全部，QEMU 只是前台”的项目。

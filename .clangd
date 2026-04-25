@@ -1,8 +1,39 @@
-Diagnostics:
-  UnusedIncludes: None
+CompileFlags:
+  CompilationDatabase: /Users/defv/dev/os-dev/projects/qemu/build
 ---
 If:
   PathMatch: .*\.h
   PathExclude: (build|build-rust|subprojects)/.*
 CompileFlags:
   Add: [-include, qemu/osdep.h]
+---
+If:
+  PathMatch: .*rust/bindings/.*/wrapper\.h
+CompileFlags:
+  Compiler: clang
+  Remove:
+    - -C
+    - --color=*
+    - --crate-type
+    - --edition=*
+    - --check-cfg
+    - --cfg
+    - --crate-name
+    - --emit
+    - --extern
+    - -L*
+  Add:
+    - -x
+    - c
+    - -std=gnu11
+    - -I/Users/defv/dev/os-dev/projects/qemu
+    - -I/Users/defv/dev/os-dev/projects/qemu/build
+    - -I/Users/defv/dev/os-dev/projects/qemu/include
+    - -I/Users/defv/dev/os-dev/projects/qemu/build/include
+    - -I/opt/homebrew/Cellar/glib/2.88.0/include/glib-2.0
+    - -I/opt/homebrew/Cellar/glib/2.88.0/lib/glib-2.0/include
+    - -I/opt/homebrew/opt/gettext/include
+    - -I/opt/homebrew/Cellar/pcre2/10.47_1/include
+    - -D_GNU_SOURCE
+    - -D_FILE_OFFSET_BITS=64
+    - -D_LARGEFILE_SOURCE

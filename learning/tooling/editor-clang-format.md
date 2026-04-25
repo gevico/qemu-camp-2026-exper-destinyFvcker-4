@@ -37,6 +37,151 @@
 
 ---
 
+## `.clangd` 是什么语法
+
+`.clangd` 使用的是 YAML（YAML Ain't Markup Language）语法，但它的内容不是随便写的 YAML，而是 `clangd` 规定的一组配置字段。
+
+可以把它理解成：
+
+```mermaid
+flowchart TD
+    A[".clangd 文件"] --> B["YAML 语法"]
+    B --> C["多个配置片段"]
+    C --> D["If：决定这段配置匹配哪些文件"]
+    C --> E["CompileFlags：调整编译参数"]
+    C --> F["Diagnostics：调整诊断行为"]
+```
+
+最常见的结构是：
+
+```yaml
+CompileFlags:
+  CompilationDatabase: build
+---
+If:
+  PathMatch: .*\.h
+CompileFlags:
+  Add: [-include, qemu/osdep.h]
+```
+
+这里有几层含义：
+
+- `CompileFlags:` 是一个 map key，表示下面配置和编译参数有关。
+- `CompilationDatabase: build` 告诉 `clangd` 去哪里找 `compile_commands.json`。
+- `---` 是 YAML 文档分隔符，在 `.clangd` 里常用来分隔多个配置片段。
+- `If:` 是条件配置，表示下面这段只对匹配的文件生效。
+- `PathMatch: .*\.h` 是正则表达式，表示匹配头文件。
+- `Add: [...]` 表示给匹配到的文件额外添加编译参数。
+
+YAML 的缩进很重要。同一层级的 key 左边要对齐，子项要缩进：
+
+```yaml
+CompileFlags:
+  Add:
+    - -x
+    - c
+    - -std=gnu11
+```
+
+这和下面这种行内数组写法含义类似：
+
+```yaml
+CompileFlags:
+  Add: [-x, c, -std=gnu11]
+```
+
+在 QEMU 这种项目里，`.clangd` 通常不是用来“改变真实构建”的，而是用来让编辑器里的 `clangd` 更接近真实构建上下文。真实编译仍然由 Meson、Ninja、Make、编译器参数和 `compile_commands.json` 决定。
+
+---
+
+## 这段 `.clangd` 头文件配置是什么意思
+
+仓库里的这段配置：
+
+```yaml
+If:
+  PathMatch: .*\.h
+  PathExclude: (build|build-rust|subprojects)/.*
+CompileFlags:
+  Add: [-include, qemu/osdep.h]
+```
+
+意思是：当 `clangd` 分析源码目录里的 `.h` 头文件时，自动给它补一个 `-include qemu/osdep.h` 编译参数；但不要对 `build`、`build-rust`、`subprojects` 这些目录里的文件这么做。
+
+逐项看：
+
+- `If:` 表示下面是匹配条件。
+- `PathMatch: .*\.h` 表示匹配所有路径以 `.h` 结尾的头文件。
+- `PathExclude: (build|build-rust|subprojects)/.*` 表示排除 `build/`、`build-rust/`、`subprojects/` 下面的文件。
+- `CompileFlags:` 表示下面要修改 `clangd` 用来分析文件的编译参数。
+- `Add: [-include, qemu/osdep.h]` 表示额外添加两个参数：`-include` 和 `qemu/osdep.h`。
+
+其中 `-include qemu/osdep.h` 是 Clang/GCC 风格的参数，含义是：在真正分析这个 `.h` 文件之前，先隐式包含：
+
+```c
+#include "qemu/osdep.h"
+```
+
+QEMU 很多头文件默认依赖 `qemu/osdep.h` 提供的平台兼容定义、基础宏和系统头文件包含顺序。如果 `clangd` 把某个 `.h` 当成独立文件分析，就可能缺少这层上下文，于是出现一些看起来很奇怪的编辑器误报。这个配置就是在模拟 QEMU 源码的常规编译上下文。
+
+---
+
+## 为什么 `.clangd` 会提示 `Duplicate key If is ignored`
+
+`.clangd` 是 YAML（YAML Ain't Markup Language）格式。对 `clangd` 来说，配置文件可以由多个配置片段组成，片段之间用：
+
+```yaml
+---
+```
+
+分隔。
+
+如果同一个 YAML 片段里连续写两个顶层 `If`：
+
+```yaml
+If:
+  PathMatch: .*\.h
+CompileFlags:
+  Add: [-include, qemu/osdep.h]
+If:
+  PathMatch: .*rust/bindings/.*/wrapper\.h
+CompileFlags:
+  Add: [-x, c]
+```
+
+第二个 `If` 就和第一个 `If` 位于同一个 map 层级。YAML 里同一层级重复 key 是有歧义的，所以 `clangd` 会提示：
+
+```text
+Duplicate key If is ignored
+```
+
+正确写法是把两个条件配置拆成两个独立片段：
+
+```yaml
+If:
+  PathMatch: .*\.h
+CompileFlags:
+  Add: [-include, qemu/osdep.h]
+---
+If:
+  PathMatch: .*rust/bindings/.*/wrapper\.h
+CompileFlags:
+  Add: [-x, c]
+```
+
+可以这样理解：
+
+```mermaid
+flowchart TD
+    A[".clangd"] --> B["全局配置片段"]
+    A --> C["头文件配置片段\nIf: .*\\.h"]
+    A --> D["Rust wrapper.h 配置片段\nIf: rust/bindings/.../wrapper.h"]
+```
+
+也就是说，`---` 不是注释或装饰线，而是告诉 YAML / `clangd`：下面开始一个新的配置片段。这样两个 `If` 就不再互相覆盖或触发重复 key 诊断。
+
+---
+
 ## `.editorconfig` 和 `clang-format` 在这个仓库里各管什么
 
 阅读 QEMU 这种 C 项目时，很容易把编辑器规则和代码格式化器混在一起。

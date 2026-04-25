@@ -1,9 +1,10 @@
 {
-  "clangd.arguments": ["--compile-commands-dir=${workspaceFolder}/build-rust"],
-  "rust-analyzer.linkedProjects": [
-    "${workspaceFolder}/build-rust/rust-project.json"
-  ],
+  "clangd.arguments": ["--compile-commands-dir=${workspaceFolder}/build"],
+  // "rust-analyzer.linkedProjects": [
+  //   "${workspaceFolder}/build/rust-project.json"
+  // ],
   "rust-analyzer.cargo.extraEnv": {
-    "MESON_BUILD_ROOT": "${workspaceFolder}/build-rust"
-  }
+    "MESON_BUILD_ROOT": "${workspaceFolder}/build"
+  },
+  "cmake.ignoreCMakeListsMissing": true
 }

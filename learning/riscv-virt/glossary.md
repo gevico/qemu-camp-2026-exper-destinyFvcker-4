@@ -298,6 +298,89 @@ flowchart LR
 
 - “它物理上连了一根叫 PCI 的线”
 
+### I2C（Inter-Integrated Circuit，集成电路间总线）
+
+- `I2C` 首先可以把它理解成：
+  - **芯片和芯片之间进行短距离通信的一套串行总线协议**
+- 它很常见于板级外设连接，比如：
+  - 传感器
+  - `EEPROM`
+  - 电源管理芯片
+  - 实时时钟（`RTC`）
+  - 一些低速控制类外设
+
+先看整体图：
+
+```mermaid
+graph LR
+    C["Controller（控制器/主控）"] --- SCL["SCL（Serial Clock，时钟线）"]
+    C --- SDA["SDA（Serial Data，数据线）"]
+    T1["Target 1（目标设备）"] --- SCL
+    T1 --- SDA
+    T2["Target 2（目标设备）"] --- SCL
+    T2 --- SDA
+    T3["Target 3（目标设备）"] --- SCL
+    T3 --- SDA
+```
+
+从这个图里可以先抓住 4 个核心点：
+
+- 它通常只有 **两根信号线**
+  - `SCL`：时钟线
+  - `SDA`：数据线
+- 它是 **串行（serial）** 通信
+  - 数据不是很多根线同时并行发
+  - 而是按位一个个送
+- 一条总线上可以挂 **多个设备**
+  - 不是控制器和一个设备独占一根专线
+- 通信时通常有一个发起方
+  - 现代说法常叫 `controller` / `target`
+  - 传统资料里常写 `master` / `slave`
+
+它大致怎么工作，可以先粗略记成：
+
+1. `controller` 先发起一次传输
+2. 说明自己要找哪个地址的设备
+3. 说明这次是读还是写
+4. 目标设备应答（`ACK`）后继续传数据
+5. 传完再结束这次事务
+
+所以从软件/驱动角度看，`I2C` 的重点通常是：
+
+- 总线上有哪些设备地址
+- 某个设备寄存器怎么读写
+- 一次传输的起始、应答、结束是否正确
+
+### 为什么它叫 `I2C`
+
+`I2C` 是 `Inter-Integrated Circuit` 的缩写。
+
+- `Inter`
+  - 表示“在……之间”
+- `Integrated Circuit`
+  - 就是“集成电路”，也就是芯片
+
+所以它原本的字面意思就是：
+
+- **芯片与芯片之间通信**
+
+之所以写成 `I2C`，是因为：
+
+- 开头是 `I`
+- 后面有两个连续的单词都以 `C` 开头
+  - `Integrated`
+  - `Circuit`
+- 于是就习惯写成 `I²C` 或 `I2C`
+
+你可以把它记成：
+
+- `I2C` = `I` + 2 个 `C`
+- 也就是 **Inter-Integrated Circuit**
+
+如果只用一句最标准、最够用的话来记：
+
+- **`I2C` 是一种让多个芯片通过两根线进行短距离串行通信的总线协议。**
+
 ### GPIO（General Purpose Input/Output，通用输入输出）
 
 - 一组很基础的数字引脚接口。
@@ -498,6 +581,142 @@ flowchart TD
 - 可以先把它理解成：把 `CPU` / 系统总线一侧和 `PCIe` 设备一侧接起来的那个“桥”。
 - 没有这层桥，`PCI` 设备就没有地方挂。
 - 在当前这份 `QEMU RISC-V virt` 代码里，`virt_machine_init()` 会调用 `gpex_pcie_init()` 来创建这套 `PCIe` 主机桥。
+
+### PCIe device（PCI Express Device，PCIe 设备）
+
+- `PCIe` 是 `PCI Express` 的缩写，是一种高速外设互连标准。
+- `PCIe device` 指挂在 `PCIe` 总线 / 链路上的外设。
+- 真实机器里常见的 `PCIe` 设备包括：
+  - 独立显卡
+  - 网卡
+  - NVMe SSD 控制器
+  - 声卡
+  - USB 控制器
+  - SATA / RAID 控制器
+  - FPGA / 采集卡 / 加速卡
+- `PCIe` 设备和简单 `MMIO` 平台设备不同，它有一套标准发现和配置机制。操作系统通常会扫描 `PCIe` 总线，读取设备的配置空间，识别 vendor id、device id、class code 等信息。
+- `BAR`（Base Address Register，基地址寄存器）是 `PCI` / `PCIe` 设备配置空间里的重要字段，用来告诉系统：这个设备需要多大的 `MMIO` 或 `I/O` 地址窗口。系统分配地址后，设备寄存器或显存窗口才会映射到 CPU 可访问的地址空间。
+- 可以这样理解：
+
+```mermaid
+flowchart LR
+    A["CPU / SoC"] --> B["PCIe host bridge"]
+    B --> C["PCIe root bus"]
+    C --> D["PCIe device: NVMe"]
+    C --> E["PCIe device: 网卡"]
+    C --> F["PCIe device: 显卡"]
+    D --> G["配置空间"]
+    D --> H["BAR 映射出的 MMIO 窗口"]
+```
+
+- 在 `QEMU` 里，具体 `PCI` / `PCIe` 设备通常继承 `PCIDevice`，挂到 `PCIBus` 上。比如教学设备 `edu` 就是一个 `PCI` 设备模型。
+- 在 `RISC-V virt` 里，如果要挂 `PCI` / `PCIe` 设备，machine 必须先创建 `PCIe host bridge`，也就是 `gpex_pcie_init()` 相关的那套桥和 bus。否则会出现类似 `No 'PCI' bus found for device 'edu'` 的错误。
+
+### `SysBusDevice`（System Bus Device，系统总线设备）
+
+- `SysBusDevice` 是 `QEMU` 设备模型里一种“挂在系统总线上的设备”基类。
+- 这里的 system bus 可以先理解成：板级 `SoC` 里 `CPU` 直接能通过物理地址访问的那条主干总线。
+- 这类设备通常不是 `PCI` / `USB` / `I2C` 这种可枚举外设总线上的设备，而是板子设计时就固定放在某个地址上的片上外设或平台设备。
+- 典型特征是：
+  - 通过 `MMIO` 暴露寄存器窗口。
+  - 通过 `IRQ` 线连到中断控制器。
+  - 由 machine 初始化代码直接创建、映射地址、连接中断。
+- 源码定义在 `include/hw/sysbus.h`，结构里保存了 `mmio[]`、`pio[]` 等资源。
+- 常见辅助函数包括：
+  - `sysbus_init_mmio()`：设备声明自己有一个 `MMIO` 区域。
+  - `sysbus_mmio_map()`：machine 把这个 `MMIO` 区域映射到某个物理地址。
+  - `sysbus_init_irq()`：设备声明自己有一根中断输出线。
+  - `sysbus_connect_irq()`：machine 把设备中断线接到中断控制器。
+- 可以这样记：
+
+```mermaid
+flowchart LR
+    A["CPU 物理地址空间"] --> B["System Bus"]
+    B --> C["SysBusDevice: UART"]
+    B --> D["SysBusDevice: Timer"]
+    B --> E["SysBusDevice: Interrupt Controller"]
+    C --> F["MMIO 寄存器窗口"]
+    C --> G["IRQ 输出线"]
+```
+
+- 在 `RISC-V virt` 语境里，可以把 `SysBusDevice` 粗略理解成：`UART`、中断控制器、定时器、`virtio-mmio` 等这类“由板级代码固定摆在地址空间里的平台设备”。
+- 它和 `PCI` 设备的主要区别是：
+  - `SysBusDevice` 通常由 machine 代码直接放到固定地址。
+  - `PCI` 设备挂在 `PCI` / `PCIe` 总线上，通过配置空间、BAR（Base Address Register，基地址寄存器）等机制发现和分配资源。
+- 注意：`SysBusDevice` 不是一个真实硬件世界里的标准分类。真实物理板子上通常不会把“所有可连接设备”都叫作 `SysBusDevice`。
+- 真实硬件上更常见的说法是：
+  - 设备挂在 `PCIe`、`USB`、`I2C`、`SPI`、`UART` 等具体总线或接口上。
+  - 片上外设通过 `AXI`、`AHB`、`APB` 等 `SoC` 内部总线连接到处理器和内存系统。
+  - 某些外设寄存器被映射进处理器物理地址空间，软件通过 `MMIO` 访问。
+- `QEMU` 的 `SysBusDevice` 更像是把这些“板级固定地址的 `MMIO` / `IRQ` 设备”统一放进一个软件抽象里，方便 machine 代码创建、映射和连中断。
+
+#### 为什么 QEMU Rust 文档先强调 `SysBusDevice`
+
+官方 Rust 文档说当前重点是让新设备能用 safe Rust 继承 `SysBusDevice`，以后才可能扩展到 `PCI` 设备、整块 board 或后端。这不是说 `SysBusDevice` 和“设备”是并列概念，而是因为它在 QEMU 设备层次里是一个相对容易先封装安全边界的子类：
+
+```mermaid
+flowchart TB
+    A["Object\nQOM 基类"] --> B["DeviceState\n所有设备的公共基类"]
+    B --> C["SysBusDevice\n系统总线 / 平台设备"]
+    B --> D["PCIDevice\nPCI / PCIe 设备"]
+    B --> E["其他总线设备\nUSB / I2C / SPI 等"]
+
+    C --> C1["machine 代码固定映射 MMIO"]
+    C --> C2["machine 代码连接 IRQ"]
+    D --> D1["PCI 配置空间"]
+    D --> D2["BAR 资源分配"]
+    D --> D3["DMA / IOMMU / MSI 等机制"]
+```
+
+- `SysBusDevice` 仍然是 `DeviceState` 的子类，是“设备模型”的一部分。
+- 它通常由 machine 代码直接创建、映射 `MMIO`、连接 `IRQ`，生命周期和资源连接路径比较直接。
+- `PCI` / `PCIe` 设备还涉及 `PCIBus`、配置空间、`BAR`（Base Address Register，基地址寄存器）、`DMA`（Direct Memory Access，直接内存访问）、`MSI`（Message Signaled Interrupts，消息信号中断）等机制，安全封装面更大。
+- 所以 Rust 文档里的区分更像是“当前 safe Rust 设备支持范围的阶段划分”，不是硬件世界里把 `SysBusDevice` 和所有其他设备绝对切开。
+
+#### System bus 和 PCI bus 的区别
+
+可以先用一句话区分：
+
+- **system bus 更像板子 / SoC 内部把 CPU、内存控制器、固定外设连起来的主干互连。**
+- **PCI bus / PCIe bus 是一套标准化的外设扩展总线，用来挂可发现、可配置的 PCI / PCIe 设备。**
+
+```mermaid
+flowchart TB
+    CPU["CPU / SoC"] --> FABRIC["内部 system bus / interconnect"]
+    FABRIC --> RAM["内存控制器"]
+    FABRIC --> UART["固定 MMIO 外设\nUART / timer / interrupt controller"]
+    FABRIC --> RC["PCIe root complex / host bridge"]
+    RC --> PCIE["PCIe bus / link"]
+    PCIE --> NVME["PCIe endpoint\nNVMe / 网卡 / 显卡"]
+```
+
+在真实主板或 SoC 上，它们通常确实不是同一个东西：
+
+- `PCIe` 是明确标准化的总线 / 链路协议，有 root complex、switch、endpoint、配置空间、BAR 等机制；PC 主板上的 PCIe 插槽和走线就是这套东西的物理体现。
+- `system bus` 在 QEMU 里更偏软件抽象，不一定对应真实硬件上一根就叫 “System Bus” 的线。真实芯片里可能是 `AXI`、`AHB`、`APB`、片上 NoC（Network-on-Chip，片上网络）等内部互连。
+- 固定 MMIO 外设通常不需要被扫描发现，板级代码或设备树直接描述“它就在这个物理地址，中断线接到这里”。
+- PCI / PCIe 设备则通常通过总线枚举发现，系统读取配置空间，再给 BAR 分配地址窗口，之后 CPU 才通过这些窗口访问设备寄存器或显存。
+
+所以在 QEMU 里可以这样记：
+
+| 角度 | `SysBusDevice` / system bus | `PCIDevice` / PCI bus |
+| --- | --- | --- |
+| 典型位置 | 板级固定外设、SoC 内部外设 | 外设扩展总线上的设备 |
+| 发现方式 | machine 代码或设备树直接描述 | PCI 枚举、读取配置空间 |
+| 地址资源 | 通常固定 MMIO 地址 | 通过 BAR 申请并分配地址窗口 |
+| 中断资源 | machine 代码直接连 IRQ | INTx / MSI / MSI-X 等 PCI 机制 |
+| QEMU 基类 | `SysBusDevice` | `PCIDevice` |
+
+几个常见内部互连缩写可以这样记：
+
+| 缩写 | 全称 | 中文理解 |
+| --- | --- | --- |
+| `AXI` | `Advanced eXtensible Interface` | 高级可扩展接口，常用于高性能片上互连 |
+| `AHB` | `Advanced High-performance Bus` | 高级高性能总线，比 `APB` 更适合高带宽模块 |
+| `APB` | `Advanced Peripheral Bus` | 高级外设总线，常用于低速、简单外设寄存器访问 |
+| `NoC` | `Network-on-Chip` | 片上网络，把芯片内部互连做得更像网络拓扑 |
+
+其中 `AXI`、`AHB`、`APB` 都属于 `AMBA`（Advanced Microcontroller Bus Architecture，高级微控制器总线架构）家族。学习 QEMU 时不必先深入这些协议细节，只要先知道：它们是现实 SoC 里连接 CPU、内存控制器、DMA、外设控制器等模块的内部互连规范或结构。
 
 ### `virt_machine_init`
 
