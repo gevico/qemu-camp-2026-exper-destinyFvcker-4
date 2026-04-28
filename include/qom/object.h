@@ -82,16 +82,16 @@ typedef void(ObjectPropertyRelease)(Object *obj, const char *name,
 typedef void(ObjectPropertyInit)(Object *obj, ObjectProperty *prop);
 
 struct ObjectProperty {
-  char *name;
-  char *type;
-  char *description;
-  ObjectPropertyAccessor *get;
-  ObjectPropertyAccessor *set;
-  ObjectPropertyResolve *resolve;
-  ObjectPropertyRelease *release;
-  ObjectPropertyInit *init;
-  void *opaque;
-  QObject *defval;
+    char *name;
+    char *type;
+    char *description;
+    ObjectPropertyAccessor *get;
+    ObjectPropertyAccessor *set;
+    ObjectPropertyResolve *resolve;
+    ObjectPropertyRelease *release;
+    ObjectPropertyInit *init;
+    void *opaque;
+    QObject *defval;
 };
 
 /**
@@ -120,16 +120,16 @@ typedef void(ObjectFree)(void *obj);
  * integer type handle.
  */
 struct ObjectClass {
-  /* private: */
-  Type type;
-  GSList *interfaces;
+    /* private: */
+    Type type;
+    GSList *interfaces;
 
-  const char *object_cast_cache[OBJECT_CLASS_CAST_CACHE];
-  const char *class_cast_cache[OBJECT_CLASS_CAST_CACHE];
+    const char *object_cast_cache[OBJECT_CLASS_CAST_CACHE];
+    const char *class_cast_cache[OBJECT_CLASS_CAST_CACHE];
 
-  ObjectUnparent *unparent;
+    ObjectUnparent *unparent;
 
-  GHashTable *properties;
+    GHashTable *properties;
 };
 
 /**
@@ -145,12 +145,12 @@ struct ObjectClass {
  * run time.
  */
 struct Object {
-  /* private: */
-  ObjectClass *class;
-  ObjectFree *free;
-  GHashTable *properties;
-  uint32_t ref;
-  Object *parent;
+    /* private: */
+    ObjectClass *class;
+    ObjectFree *free;
+    GHashTable *properties;
+    uint32_t ref;
+    Object *parent;
 };
 
 /**
@@ -165,10 +165,11 @@ struct Object {
  * This macro will provide the instance type cast functions for a
  * QOM type.
  */
-#define DECLARE_INSTANCE_CHECKER(InstanceType, OBJ_NAME, TYPENAME)             \
-  static inline G_GNUC_UNUSED InstanceType *OBJ_NAME(const void *obj) {        \
-    return OBJECT_CHECK(InstanceType, obj, TYPENAME);                          \
-  }
+#define DECLARE_INSTANCE_CHECKER(InstanceType, OBJ_NAME, TYPENAME)      \
+    static inline G_GNUC_UNUSED InstanceType *OBJ_NAME(const void *obj) \
+    {                                                                   \
+        return OBJECT_CHECK(InstanceType, obj, TYPENAME);               \
+    }
 
 /**
  * DECLARE_CLASS_CHECKERS:
@@ -183,14 +184,16 @@ struct Object {
  * QOM type.
  */
 #define DECLARE_CLASS_CHECKERS(ClassType, OBJ_NAME, TYPENAME)                  \
-  static inline G_GNUC_UNUSED ClassType *OBJ_NAME##_GET_CLASS(                 \
-      const void *obj) {                                                       \
-    return OBJECT_GET_CLASS(ClassType, obj, TYPENAME);                         \
-  }                                                                            \
+    static inline G_GNUC_UNUSED ClassType *OBJ_NAME##_GET_CLASS(               \
+        const void *obj)                                                       \
+    {                                                                          \
+        return OBJECT_GET_CLASS(ClassType, obj, TYPENAME);                     \
+    }                                                                          \
                                                                                \
-  static inline G_GNUC_UNUSED ClassType *OBJ_NAME##_CLASS(const void *klass) { \
-    return OBJECT_CLASS_CHECK(ClassType, klass, TYPENAME);                     \
-  }
+    static inline G_GNUC_UNUSED ClassType *OBJ_NAME##_CLASS(const void *klass) \
+    {                                                                          \
+        return OBJECT_CLASS_CHECK(ClassType, klass, TYPENAME);                 \
+    }
 
 /**
  * DECLARE_OBJ_CHECKERS:
@@ -205,10 +208,10 @@ struct Object {
  * This macro will provide the three standard type cast functions for a
  * QOM type.
  */
-#define DECLARE_OBJ_CHECKERS(InstanceType, ClassType, OBJ_NAME, TYPENAME)      \
-  DECLARE_INSTANCE_CHECKER(InstanceType, OBJ_NAME, TYPENAME)                   \
-                                                                               \
-  DECLARE_CLASS_CHECKERS(ClassType, OBJ_NAME, TYPENAME)
+#define DECLARE_OBJ_CHECKERS(InstanceType, ClassType, OBJ_NAME, TYPENAME) \
+    DECLARE_INSTANCE_CHECKER(InstanceType, OBJ_NAME, TYPENAME)            \
+                                                                          \
+    DECLARE_CLASS_CHECKERS(ClassType, OBJ_NAME, TYPENAME)
 
 /**
  * OBJECT_DECLARE_TYPE:
@@ -224,14 +227,14 @@ struct Object {
  *
  * The object struct and class struct need to be declared manually.
  */
-#define OBJECT_DECLARE_TYPE(InstanceType, ClassType, MODULE_OBJ_NAME)          \
-  typedef struct InstanceType InstanceType;                                    \
-  typedef struct ClassType ClassType;                                          \
-                                                                               \
-  G_DEFINE_AUTOPTR_CLEANUP_FUNC(InstanceType, object_unref)                    \
-                                                                               \
-  DECLARE_OBJ_CHECKERS(InstanceType, ClassType, MODULE_OBJ_NAME,               \
-                       TYPE_##MODULE_OBJ_NAME)
+#define OBJECT_DECLARE_TYPE(InstanceType, ClassType, MODULE_OBJ_NAME) \
+    typedef struct InstanceType InstanceType;                         \
+    typedef struct ClassType ClassType;                               \
+                                                                      \
+    G_DEFINE_AUTOPTR_CLEANUP_FUNC(InstanceType, object_unref)         \
+                                                                      \
+    DECLARE_OBJ_CHECKERS(InstanceType, ClassType, MODULE_OBJ_NAME,    \
+                         TYPE_##MODULE_OBJ_NAME)
 
 /**
  * OBJECT_DECLARE_SIMPLE_TYPE:
@@ -244,13 +247,13 @@ struct Object {
  * This macro should be used unless the class struct needs to have
  * virtual methods declared.
  */
-#define OBJECT_DECLARE_SIMPLE_TYPE(InstanceType, MODULE_OBJ_NAME)              \
-  typedef struct InstanceType InstanceType;                                    \
-                                                                               \
-  G_DEFINE_AUTOPTR_CLEANUP_FUNC(InstanceType, object_unref)                    \
-                                                                               \
-  DECLARE_INSTANCE_CHECKER(InstanceType, MODULE_OBJ_NAME,                      \
-                           TYPE_##MODULE_OBJ_NAME)
+#define OBJECT_DECLARE_SIMPLE_TYPE(InstanceType, MODULE_OBJ_NAME) \
+    typedef struct InstanceType InstanceType;                     \
+                                                                  \
+    G_DEFINE_AUTOPTR_CLEANUP_FUNC(InstanceType, object_unref)     \
+                                                                  \
+    DECLARE_INSTANCE_CHECKER(InstanceType, MODULE_OBJ_NAME,       \
+                             TYPE_##MODULE_OBJ_NAME)
 
 /**
  * DO_OBJECT_DEFINE_TYPE_EXTENDED:
@@ -267,30 +270,32 @@ struct Object {
  * This is the base macro used to implement all the OBJECT_DEFINE_*
  * macros. It should never be used directly in a source file.
  */
-#define DO_OBJECT_DEFINE_TYPE_EXTENDED(                                        \
-    ModuleObjName, module_obj_name, MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME,   \
-    ABSTRACT, CLASS_SIZE, ...)                                                 \
-  static void module_obj_name##_finalize(Object *obj);                         \
-  static void module_obj_name##_class_init(ObjectClass *oc, const void *data); \
-  static void module_obj_name##_init(Object *obj);                             \
-                                                                               \
-  static const TypeInfo module_obj_name##_info = {                             \
-      .parent = TYPE_##PARENT_MODULE_OBJ_NAME,                                 \
-      .name = TYPE_##MODULE_OBJ_NAME,                                          \
-      .instance_size = sizeof(ModuleObjName),                                  \
-      .instance_align = __alignof__(ModuleObjName),                            \
-      .instance_init = module_obj_name##_init,                                 \
-      .instance_finalize = module_obj_name##_finalize,                         \
-      .class_size = CLASS_SIZE,                                                \
-      .class_init = module_obj_name##_class_init,                              \
-      .abstract = ABSTRACT,                                                    \
-      .interfaces = (const InterfaceInfo[]){__VA_ARGS__},                      \
-  };                                                                           \
-                                                                               \
-  static void module_obj_name##_register_types(void) {                         \
-    type_register_static(&module_obj_name##_info);                             \
-  }                                                                            \
-  type_init(module_obj_name##_register_types);
+#define DO_OBJECT_DEFINE_TYPE_EXTENDED(                                      \
+    ModuleObjName, module_obj_name, MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME, \
+    ABSTRACT, CLASS_SIZE, ...)                                               \
+    static void module_obj_name##_finalize(Object *obj);                     \
+    static void module_obj_name##_class_init(ObjectClass *oc,                \
+                                             const void *data);              \
+    static void module_obj_name##_init(Object *obj);                         \
+                                                                             \
+    static const TypeInfo module_obj_name##_info = {                         \
+        .parent = TYPE_##PARENT_MODULE_OBJ_NAME,                             \
+        .name = TYPE_##MODULE_OBJ_NAME,                                      \
+        .instance_size = sizeof(ModuleObjName),                              \
+        .instance_align = __alignof__(ModuleObjName),                        \
+        .instance_init = module_obj_name##_init,                             \
+        .instance_finalize = module_obj_name##_finalize,                     \
+        .class_size = CLASS_SIZE,                                            \
+        .class_init = module_obj_name##_class_init,                          \
+        .abstract = ABSTRACT,                                                \
+        .interfaces = (const InterfaceInfo[]){ __VA_ARGS__ },                \
+    };                                                                       \
+                                                                             \
+    static void module_obj_name##_register_types(void)                       \
+    {                                                                        \
+        type_register_static(&module_obj_name##_info);                       \
+    }                                                                        \
+    type_init(module_obj_name##_register_types);
 
 /**
  * OBJECT_DEFINE_TYPE_EXTENDED:
@@ -316,12 +321,13 @@ struct Object {
  * This macro should rarely be used, instead one of the more specialized
  * macros is usually a better choice.
  */
-#define OBJECT_DEFINE_TYPE_EXTENDED(ModuleObjName, module_obj_name,            \
-                                    MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME,   \
-                                    ABSTRACT, ...)                             \
-  DO_OBJECT_DEFINE_TYPE_EXTENDED(                                              \
-      ModuleObjName, module_obj_name, MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME, \
-      ABSTRACT, sizeof(ModuleObjName##Class), __VA_ARGS__)
+#define OBJECT_DEFINE_TYPE_EXTENDED(ModuleObjName, module_obj_name,          \
+                                    MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME, \
+                                    ABSTRACT, ...)                           \
+    DO_OBJECT_DEFINE_TYPE_EXTENDED(ModuleObjName, module_obj_name,           \
+                                   MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME,  \
+                                   ABSTRACT, sizeof(ModuleObjName##Class),   \
+                                   __VA_ARGS__)
 
 /**
  * OBJECT_DEFINE_TYPE:
@@ -334,10 +340,11 @@ struct Object {
  * This is a specialization of OBJECT_DEFINE_TYPE_EXTENDED, which is suitable
  * for the common case of a non-abstract type, without any interfaces.
  */
-#define OBJECT_DEFINE_TYPE(ModuleObjName, module_obj_name, MODULE_OBJ_NAME,    \
-                           PARENT_MODULE_OBJ_NAME)                             \
-  OBJECT_DEFINE_TYPE_EXTENDED(ModuleObjName, module_obj_name, MODULE_OBJ_NAME, \
-                              PARENT_MODULE_OBJ_NAME, false, {NULL})
+#define OBJECT_DEFINE_TYPE(ModuleObjName, module_obj_name, MODULE_OBJ_NAME, \
+                           PARENT_MODULE_OBJ_NAME)                          \
+    OBJECT_DEFINE_TYPE_EXTENDED(ModuleObjName, module_obj_name,             \
+                                MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME,    \
+                                false, { NULL })
 
 /**
  * OBJECT_DEFINE_TYPE_WITH_INTERFACES:
@@ -356,11 +363,12 @@ struct Object {
  * Note when passing the list of interfaces, be sure to include the final
  * NULL entry, e.g.  { TYPE_USER_CREATABLE }, { NULL }
  */
-#define OBJECT_DEFINE_TYPE_WITH_INTERFACES(ModuleObjName, module_obj_name,     \
-                                           MODULE_OBJ_NAME,                    \
-                                           PARENT_MODULE_OBJ_NAME, ...)        \
-  OBJECT_DEFINE_TYPE_EXTENDED(ModuleObjName, module_obj_name, MODULE_OBJ_NAME, \
-                              PARENT_MODULE_OBJ_NAME, false, __VA_ARGS__)
+#define OBJECT_DEFINE_TYPE_WITH_INTERFACES(ModuleObjName, module_obj_name, \
+                                           MODULE_OBJ_NAME,                \
+                                           PARENT_MODULE_OBJ_NAME, ...)    \
+    OBJECT_DEFINE_TYPE_EXTENDED(ModuleObjName, module_obj_name,            \
+                                MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME,   \
+                                false, __VA_ARGS__)
 
 /**
  * OBJECT_DEFINE_ABSTRACT_TYPE:
@@ -375,8 +383,9 @@ struct Object {
  */
 #define OBJECT_DEFINE_ABSTRACT_TYPE(ModuleObjName, module_obj_name,            \
                                     MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME)   \
-  OBJECT_DEFINE_TYPE_EXTENDED(ModuleObjName, module_obj_name, MODULE_OBJ_NAME, \
-                              PARENT_MODULE_OBJ_NAME, true, {NULL})
+    OBJECT_DEFINE_TYPE_EXTENDED(ModuleObjName, module_obj_name,                \
+                                MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME, true, \
+                                { NULL })
 
 /**
  * OBJECT_DEFINE_SIMPLE_TYPE_WITH_INTERFACES:
@@ -390,12 +399,12 @@ struct Object {
  * the case of a non-abstract type, with interfaces, and with no requirement
  * for a class struct.
  */
-#define OBJECT_DEFINE_SIMPLE_TYPE_WITH_INTERFACES(                             \
-    ModuleObjName, module_obj_name, MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME,   \
-    ...)                                                                       \
-  DO_OBJECT_DEFINE_TYPE_EXTENDED(ModuleObjName, module_obj_name,               \
-                                 MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME,      \
-                                 false, 0, __VA_ARGS__)
+#define OBJECT_DEFINE_SIMPLE_TYPE_WITH_INTERFACES(                           \
+    ModuleObjName, module_obj_name, MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME, \
+    ...)                                                                     \
+    DO_OBJECT_DEFINE_TYPE_EXTENDED(ModuleObjName, module_obj_name,           \
+                                   MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME,  \
+                                   false, 0, __VA_ARGS__)
 
 /**
  * OBJECT_DEFINE_SIMPLE_TYPE:
@@ -411,11 +420,11 @@ struct Object {
  * OBJECT_DECLARE_SIMPLE_TYPE then this is probably the right choice for
  * defining it.
  */
-#define OBJECT_DEFINE_SIMPLE_TYPE(ModuleObjName, module_obj_name,              \
-                                  MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME)     \
-  OBJECT_DEFINE_SIMPLE_TYPE_WITH_INTERFACES(ModuleObjName, module_obj_name,    \
-                                            MODULE_OBJ_NAME,                   \
-                                            PARENT_MODULE_OBJ_NAME, {NULL})
+#define OBJECT_DEFINE_SIMPLE_TYPE(ModuleObjName, module_obj_name,          \
+                                  MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME) \
+    OBJECT_DEFINE_SIMPLE_TYPE_WITH_INTERFACES(                             \
+        ModuleObjName, module_obj_name, MODULE_OBJ_NAME,                   \
+        PARENT_MODULE_OBJ_NAME, { NULL })
 
 /**
  * struct TypeInfo:
@@ -460,23 +469,23 @@ struct Object {
  *   element.
  */
 struct TypeInfo {
-  const char *name;
-  const char *parent;
+    const char *name;
+    const char *parent;
 
-  size_t instance_size;
-  size_t instance_align;
-  void (*instance_init)(Object *obj);
-  void (*instance_post_init)(Object *obj);
-  void (*instance_finalize)(Object *obj);
+    size_t instance_size;
+    size_t instance_align;
+    void (*instance_init)(Object *obj);
+    void (*instance_post_init)(Object *obj);
+    void (*instance_finalize)(Object *obj);
 
-  bool abstract;
-  size_t class_size;
+    bool abstract;
+    size_t class_size;
 
-  void (*class_init)(ObjectClass *klass, const void *data);
-  void (*class_base_init)(ObjectClass *klass, const void *data);
-  const void *class_data;
+    void (*class_init)(ObjectClass *klass, const void *data);
+    void (*class_base_init)(ObjectClass *klass, const void *data);
+    const void *class_data;
 
-  const InterfaceInfo *interfaces;
+    const InterfaceInfo *interfaces;
 };
 
 /**
@@ -510,9 +519,9 @@ struct TypeInfo {
  * If an invalid object is passed to this function, a run time assert will be
  * generated.
  */
-#define OBJECT_CHECK(type, obj, name)                                          \
-  ((type *)object_dynamic_cast_assert(OBJECT(obj), (name), __FILE__, __LINE__, \
-                                      __func__))
+#define OBJECT_CHECK(type, obj, name)                                  \
+    ((type *)object_dynamic_cast_assert(OBJECT(obj), (name), __FILE__, \
+                                        __LINE__, __func__))
 
 /**
  * OBJECT_CLASS_CHECK:
@@ -524,9 +533,9 @@ struct TypeInfo {
  * typically wrapped by each type to perform type safe casts of a class to a
  * specific class type.
  */
-#define OBJECT_CLASS_CHECK(class_type, class, name)                            \
-  ((class_type *)object_class_dynamic_cast_assert(                             \
-      OBJECT_CLASS(class), (name), __FILE__, __LINE__, __func__))
+#define OBJECT_CLASS_CHECK(class_type, class, name)  \
+    ((class_type *)object_class_dynamic_cast_assert( \
+        OBJECT_CLASS(class), (name), __FILE__, __LINE__, __func__))
 
 /**
  * OBJECT_GET_CLASS:
@@ -538,8 +547,8 @@ struct TypeInfo {
  * used by each type to provide a type safe macro to get a specific class type
  * from an object.
  */
-#define OBJECT_GET_CLASS(class, obj, name)                                     \
-  OBJECT_CLASS_CHECK(class, object_get_class(OBJECT(obj)), name)
+#define OBJECT_GET_CLASS(class, obj, name) \
+    OBJECT_CLASS_CHECK(class, object_get_class(OBJECT(obj)), name)
 
 /**
  * struct InterfaceInfo:
@@ -548,7 +557,7 @@ struct TypeInfo {
  * The information associated with an interface.
  */
 struct InterfaceInfo {
-  const char *type;
+    const char *type;
 };
 
 /**
@@ -563,9 +572,9 @@ struct InterfaceInfo {
  * @object_class_dynamic_cast to work with both regular classes and interfaces.
  */
 struct InterfaceClass {
-  ObjectClass parent_class;
-  /* private: */
-  Type interface_type;
+    ObjectClass parent_class;
+    /* private: */
+    Type interface_type;
 };
 
 #define TYPE_INTERFACE "interface"
@@ -575,8 +584,8 @@ struct InterfaceClass {
  * @klass: class to cast from
  * Returns: An #InterfaceClass or raise an error if cast is invalid
  */
-#define INTERFACE_CLASS(klass)                                                 \
-  OBJECT_CLASS_CHECK(InterfaceClass, klass, TYPE_INTERFACE)
+#define INTERFACE_CLASS(klass) \
+    OBJECT_CLASS_CHECK(InterfaceClass, klass, TYPE_INTERFACE)
 
 /**
  * INTERFACE_CHECK:
@@ -586,9 +595,9 @@ struct InterfaceClass {
  *
  * Returns: @obj casted to @interface if cast is valid, otherwise raise error.
  */
-#define INTERFACE_CHECK(interface, obj, name)                                  \
-  ((interface *)object_dynamic_cast_assert(OBJECT((obj)), (name), __FILE__,    \
-                                           __LINE__, __func__))
+#define INTERFACE_CHECK(interface, obj, name)                                 \
+    ((interface *)object_dynamic_cast_assert(OBJECT((obj)), (name), __FILE__, \
+                                             __LINE__, __func__))
 
 /**
  * object_new_with_class:
@@ -806,9 +815,9 @@ bool object_initialize_child_with_propsv(Object *parentobj,
  *                                      child, sizeof(*child), type,
  *                                      &error_abort, NULL)
  */
-#define object_initialize_child(parent, propname, child, type)                 \
-  object_initialize_child_internal((parent), (propname), (child),              \
-                                   sizeof(*(child)), (type))
+#define object_initialize_child(parent, propname, child, type)      \
+    object_initialize_child_internal((parent), (propname), (child), \
+                                     sizeof(*(child)), (type))
 void object_initialize_child_internal(Object *parent, const char *propname,
                                       void *child, size_t size,
                                       const char *type);
@@ -884,11 +893,12 @@ void type_register_static_array(const TypeInfo *infos, int nr_infos);
  * @type_array should be static constant that exists for the life time
  * that the type is registered.
  */
-#define DEFINE_TYPES(type_array)                                               \
-  static void do_qemu_init_##type_array(void) {                                \
-    type_register_static_array(type_array, ARRAY_SIZE(type_array));            \
-  }                                                                            \
-  type_init(do_qemu_init_##type_array)
+#define DEFINE_TYPES(type_array)                                        \
+    static void do_qemu_init_##type_array(void)                         \
+    {                                                                   \
+        type_register_static_array(type_array, ARRAY_SIZE(type_array)); \
+    }                                                                   \
+    type_init(do_qemu_init_##type_array)
 
 /**
  * type_print_class_properties:
@@ -1197,8 +1207,8 @@ ObjectProperty *object_class_property_find_err(ObjectClass *klass,
                                                const char *name, Error **errp);
 
 typedef struct ObjectPropertyIterator {
-  ObjectClass *nextclass;
-  GHashTableIter iter;
+    ObjectClass *nextclass;
+    GHashTableIter iter;
 } ObjectPropertyIterator;
 
 /**
@@ -1651,12 +1661,12 @@ ObjectProperty *object_property_add_child(Object *obj, const char *name,
                                           Object *child);
 
 typedef enum {
-  /* Unref the link pointer when the property is deleted */
-  OBJ_PROP_LINK_STRONG = 0x1,
+    /* Unref the link pointer when the property is deleted */
+    OBJ_PROP_LINK_STRONG = 0x1,
 
-  /* private */
-  OBJ_PROP_LINK_DIRECT = 0x2,
-  OBJ_PROP_LINK_CLASS = 0x4,
+    /* private */
+    OBJ_PROP_LINK_DIRECT = 0x2,
+    OBJ_PROP_LINK_CLASS = 0x4,
 } ObjectPropertyLinkFlags;
 
 /**
@@ -1806,12 +1816,12 @@ object_class_property_add_tm(ObjectClass *klass, const char *name,
                              void (*get)(Object *, struct tm *, Error **));
 
 typedef enum {
-  /* Automatically add a getter to the property */
-  OBJ_PROP_FLAG_READ = 1 << 0,
-  /* Automatically add a setter to the property */
-  OBJ_PROP_FLAG_WRITE = 1 << 1,
-  /* Automatically add a getter and a setter to the property */
-  OBJ_PROP_FLAG_READWRITE = (OBJ_PROP_FLAG_READ | OBJ_PROP_FLAG_WRITE),
+    /* Automatically add a getter to the property */
+    OBJ_PROP_FLAG_READ = 1 << 0,
+    /* Automatically add a setter to the property */
+    OBJ_PROP_FLAG_WRITE = 1 << 1,
+    /* Automatically add a getter and a setter to the property */
+    OBJ_PROP_FLAG_READWRITE = (OBJ_PROP_FLAG_READ | OBJ_PROP_FLAG_WRITE),
 } ObjectPropertyFlags;
 
 /**

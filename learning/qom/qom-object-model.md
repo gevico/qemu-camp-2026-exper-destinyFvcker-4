@@ -23,18 +23,47 @@
     - [最重要的纠正](#最重要的纠正)
     - [`TypeInfo` 常见有三种来源](#typeinfo-常见有三种来源)
     - [注册流程图](#注册流程图)
+    - [以 `PCIDevice` 看 `TypeInfo -> TypeImpl -> 实例` 怎么接起来](#以-pcidevice-看-typeinfo---typeimpl---实例-怎么接起来)
+    - [为什么 `pci.c` 里同时有“总线抽象”和“设备抽象”](#为什么-pcic-里同时有总线抽象和设备抽象)
     - [关键源码位置](#关键源码位置)
+    - [`module.h` 和 `module.c` 整体在干嘛](#moduleh-和-modulec-整体在干嘛)
+    - [QEMU module 是什么，什么时候会起作用](#qemu-module-是什么什么时候会起作用)
+      - [1. `main()` 之前：登记初始化函数](#1-main-之前登记初始化函数)
+      - [2. QEMU 启动早期：统一执行某类初始化函数](#2-qemu-启动早期统一执行某类初始化函数)
+      - [3. 按需使用某个 QOM 类型时：可能触发动态模块加载](#3-按需使用某个-qom-类型时可能触发动态模块加载)
+      - [4. 某些命令需要列出/检查全部类型时：会加载全部 QOM 模块](#4-某些命令需要列出检查全部类型时会加载全部-qom-模块)
+    - [`module_obj(TYPE_MY_DEVICE)` 是干什么的](#module_objtype_my_device-是干什么的)
+    - [`module_init(function, type)` 宏怎么读](#module_initfunction-type-宏怎么读)
     - [`init_type_list[MODULE_INIT_QOM]` 到底是什么](#init_type_listmodule_init_qom-到底是什么)
     - [`register_module_init()` 在做什么](#register_module_init-在做什么)
     - [`edu` 这类代码怎么接上来](#edu-这类代码怎么接上来)
     - [QOM 自己的根类型也走同一条链](#qom-自己的根类型也走同一条链)
+    - [为什么非得在 `object.c` 里先挂上这两个 `TypeInfo`](#为什么非得在-objectc-里先挂上这两个-typeinfo)
+      - [`interface_info` 的作用](#interface_info-的作用)
+      - [`object_info` 的作用](#object_info-的作用)
+      - [为什么这里用 `type_register_internal()`，不是 `type_register_static()`](#为什么这里用-type_register_internal不是-type_register_static)
+      - [这两个名字为什么这么取](#这两个名字为什么这么取)
+      - [如果不先注册这两个根类型，会怎样](#如果不先注册这两个根类型会怎样)
   - [对象布局与转型](#对象布局与转型)
     - [为什么子对象能直接当成 `Object *`](#为什么子对象能直接当成-object-)
     - [一个实例链例子](#一个实例链例子)
     - [`Object.parent` 不是继承链](#objectparent-不是继承链)
     - [常见 cast/check 宏](#常见-castcheck-宏)
+    - [`DECLARE_INSTANCE_CHECKER(...)` 是干什么的](#declare_instance_checker-是干什么的)
     - [`OBJECT_DECLARE_TYPE(DeviceState, DeviceClass, DEVICE)` 展开看](#object_declare_typedevicestate-deviceclass-device-展开看)
+    - [为什么这里只传 `DeviceState` 和 `DeviceClass`](#为什么这里只传-devicestate-和-deviceclass)
     - [把 `OBJECT_CHECK(...)` 展开看](#把-object_check-展开看)
+      - [`CONFIG_QOM_CAST_DEBUG` 什么时候会开启](#config_qom_cast_debug-什么时候会开启)
+    - [`object_dynamic_cast_assert(...)` 这一个函数到底在干什么](#object_dynamic_cast_assert-这一个函数到底在干什么)
+      - [1. 先记一条 trace](#1-先记一条-trace)
+      - [2. 真正的断言逻辑只在 `CONFIG_QOM_CAST_DEBUG` 下启用](#2-真正的断言逻辑只在-config_qom_cast_debug-下启用)
+      - [3. 先查一个很小的成功缓存](#3-先查一个很小的成功缓存)
+      - [4. 缓存没命中，就走真正的动态检查](#4-缓存没命中就走真正的动态检查)
+      - [5. 如果 cast 失败，而且对象本身不是空指针，就报错退出](#5-如果-cast-失败而且对象本身不是空指针就报错退出)
+      - [6. 成功时断言“返回值必须还是原地址”](#6-成功时断言返回值必须还是原地址)
+      - [7. 把成功结果塞进缓存，优化下次 cast](#7-把成功结果塞进缓存优化下次-cast)
+      - [8. 最后为什么返回 `obj` 而不是 `inst`](#8-最后为什么返回-obj-而不是-inst)
+    - [为什么每个类型还要再包一层 `MY_DEVICE(...)` 这种宏](#为什么每个类型还要再包一层-my_device-这种宏)
     - [`OBJECT_CHECK(...)` 和 `OBJECT_CLASS_CHECK(...)` 最本质的区别](#object_check-和-object_class_check-最本质的区别)
   - [类初始化与实例初始化](#类初始化与实例初始化)
     - [可以先把它们分成两层](#可以先把它们分成两层)
@@ -43,6 +72,16 @@
   - [属性表与 `parent` 指针](#属性表与-parent-指针)
     - [属性有两层](#属性有两层)
     - [`parent` 指针什么时候有值](#parent-指针什么时候有值)
+    - [`MemoryRegion` 里的 `opaque` 是什么](#memoryregion-里的-opaque-是什么)
+      - [Notion 笔记：`void *`、`BqlCell`、`BqlRefCell`、`Opaque` 怎么理解](#notion-笔记void-bqlcellbqlrefcellopaque-怎么理解)
+        - [一句话结论](#一句话结论)
+        - [为什么不要直接转成 `&mut`](#为什么不要直接转成-mut)
+        - [正确的心智模型](#正确的心智模型)
+        - [三个类型分别干什么](#三个类型分别干什么)
+        - [`BqlCell` / `BqlRefCell` 为什么带 `Bql`](#bqlcell--bqlrefcell-为什么带-bql)
+        - [`vmstate` 为什么认识它们](#vmstate-为什么认识它们)
+        - [`Opaque<T>` 是干什么的](#opaquet-是干什么的)
+        - [最终怎么记](#最终怎么记)
   - [以 `edu` 为例](#以-edu-为例)
     - [实例链怎么展开](#实例链怎么展开)
     - [`class` 和 `parent` 分别该怎么看](#class-和-parent-分别该怎么看)
@@ -54,13 +93,38 @@
   - [`TypeImpl` 速读](#typeimpl-速读)
     - [它到底是什么](#它到底是什么)
     - [最重要的字段](#最重要的字段)
+    - [`struct InterfaceImpl { const char *typename; }` 到底在干什么](#struct-interfaceimpl--const-char-typename--到底在干什么)
+    - [为什么它目前只需要一个 `typename`](#为什么它目前只需要一个-typename)
+    - [它不是最终接口对象](#它不是最终接口对象)
+    - [interface 的函数指针到底放在哪里](#interface-的函数指针到底放在哪里)
+    - [`ObjectClass.interfaces` 和 `TypeImpl.interfaces[]` 到底是什么关系](#objectclassinterfaces-和-typeimplinterfaces-到底是什么关系)
+    - [一句话记忆](#一句话记忆)
     - [最重要的函数](#最重要的函数)
     - [从 `object.h` 开始看，它在整层抽象里的位置](#从-objecth-开始看它在整层抽象里的位置)
     - [`TypeInfo` 和 `ObjectClass` 的关系](#typeinfo-和-objectclass-的关系)
+    - [为什么 `TypeInfo` 和 `TypeImpl` 看起来很多字段都差不多](#为什么-typeinfo-和-typeimpl-看起来很多字段都差不多)
+    - [为什么不直接只保留一个 `TypeInfo`](#为什么不直接只保留一个-typeinfo)
+      - [1. `TypeInfo` 更像外部输入](#1-typeinfo-更像外部输入)
+      - [2. `TypeImpl` 更像内部工作状态](#2-typeimpl-更像内部工作状态)
+    - [所以它们的关系更像什么](#所以它们的关系更像什么)
+    - [能不能类比成 `TypeInfo : TypeImpl = ObjectClass : Object`](#能不能类比成-typeinfo--typeimpl--objectclass--object)
+    - [类和对象到底是什么关系](#类和对象到底是什么关系)
+    - [那 `TypeImpl` 和 `ObjectClass` 更像什么关系](#那-typeimpl-和-objectclass-更像什么关系)
+    - [为什么 `TypeInfo` 放在 `object.h`，但 `TypeImpl` 放在 `object.c`](#为什么-typeinfo-放在-objecth但-typeimpl-放在-objectc)
+      - [1. 为什么 `TypeInfo` 必须放头文件里](#1-为什么-typeinfo-必须放头文件里)
+      - [2. 为什么 `TypeImpl` 要藏在 `.c` 文件里](#2-为什么-typeimpl-要藏在-c-文件里)
+      - [3. 这代表了什么](#3-这代表了什么)
+      - [4. 为什么这很重要](#4-为什么这很重要)
+      - [5. 顺手对比一下：为什么 `Object` / `ObjectClass` 反而放在头文件里](#5-顺手对比一下为什么-object--objectclass-反而放在头文件里)
     - [`ObjectClass` 是怎么被“制造”出来的](#objectclass-是怎么被制造出来的)
+    - [回到 `qom/object.c:336`：`type_initialize(TypeImpl *ti)` 到底在干什么](#回到-qomobjectc336type_initializetypeimpl-ti-到底在干什么)
+      - [为什么 `instance_size == 0` 会被强制标记为 `abstract`](#为什么-instance_size--0-会被强制标记为-abstract)
+    - [看一个真实代码例子：`ObjectClass -> DeviceClass -> PCIDeviceClass`](#看一个真实代码例子objectclass---deviceclass---pcideviceclass)
     - [所以能不能说“`ObjectClass` 也依赖 `TypeInfo` 才能被制造出来”](#所以能不能说objectclass-也依赖-typeinfo-才能被制造出来)
     - [一句话总结](#一句话总结)
   - [最短复习版](#最短复习版)
+    - [`type_table` 里的 `TypeImpl` 到底在哪里生成 `Object`](#type_table-里的-typeimpl-到底在哪里生成-object)
+  - [最短复习版](#最短复习版-1)
 
 ---
 
@@ -1919,7 +1983,7 @@ OBJECT_DECLARE_TYPE(DeviceState, DeviceClass, DEVICE)
 
 再加一个：
 
-3. 这个类型的宏名前缀是什么
+1. 这个类型的宏名前缀是什么
    - 这里就是 `DEVICE`
    - 用来生成 `DEVICE(obj)`、`DEVICE_CLASS(klass)`、`DEVICE_GET_CLASS(obj)`，以及拼出 `TYPE_DEVICE`
 
@@ -2865,6 +2929,281 @@ flowchart TD
 - `object_property_add_child(...)`
 
 之后，`parent` 才会指向某个实际的 QOM 父对象。
+
+---
+
+### `MemoryRegion` 里的 `opaque` 是什么
+
+`opaque` 直译是“不透明的”。在 C / QEMU 里，`void *opaque` 常常表示：
+
+- 这是一根指针；
+- 但当前这层框架不关心它具体指向什么类型；
+- 框架只负责把它保存起来，并在回调时原样传回去；
+- 真正懂它类型的，是注册这个回调的人。
+
+以 `MemoryRegion` 为例，`include/system/memory.h` 里可以看到两层配合：
+
+```c
+struct MemoryRegionOps {
+    uint64_t (*read)(void *opaque, hwaddr addr, unsigned size);
+    void (*write)(void *opaque, hwaddr addr, uint64_t data, unsigned size);
+    ...
+};
+
+struct MemoryRegion {
+    ...
+    const MemoryRegionOps *ops;
+    void *opaque;
+    ...
+};
+```
+
+初始化 I/O 类型的 `MemoryRegion` 时，调用者会传入：
+
+```c
+memory_region_init_io(mr, owner, ops, opaque, name, size);
+```
+
+然后 `system/memory.c` 里会保存：
+
+```c
+mr->ops = ops;
+mr->opaque = opaque;
+```
+
+等客户机访问这段 MMIO（Memory-Mapped I/O，内存映射输入输出）地址时，QEMU 再调用：
+
+```c
+mr->ops->read(mr->opaque, addr, size);
+mr->ops->write(mr->opaque, addr, value, size);
+```
+
+所以 `opaque` 的核心意思不是“神秘”，而是：
+
+```text
+MemoryRegion 框架看不懂它，只把它当作上下文指针保存；
+设备自己的 read/write 回调知道它原本是什么，再把它转回去使用。
+```
+
+常见情况是把某个设备状态结构体指针传进去，例如概念上类似：
+
+```c
+MyDeviceState *s = ...;
+memory_region_init_io(&s->mmio, OBJECT(s), &my_ops, s, "my-mmio", size);
+```
+
+之后回调里再取回：
+
+```c
+static uint64_t my_read(void *opaque, hwaddr addr, unsigned size)
+{
+    MyDeviceState *s = opaque;
+    ...
+}
+```
+
+把这件事放到 Rust 语境里看，就容易出现所有权 / 借用问题：
+
+```text
+QOM object 被创建
+  ↓
+同一个对象地址又作为 MemoryRegion 的 opaque 保存成 *mut
+  ↓
+QOM object 被挂进 QOM composition tree
+  ↓
+内存访问发生，opaque 被转成 &mut 访问设备状态
+  ↓
+但对象仍然可以从 QOM 树这条共享路径被观察到
+```
+
+这里危险的地方不在于 `*mut` 本身。裸指针（raw pointer）不受 Rust 借用检查器直接约束。真正危险的是：
+
+- 一旦把 `*mut T` 转成 `&mut T`；
+- 就是在向 Rust 承诺：这段时间里我独占这个 `T`；
+- 但同一个对象如果还通过 QOM composition tree 被共享持有 / 可达；
+- 那这个“独占”承诺就可能不成立。
+
+所以这里的 `opaque value` 可以先记成：
+
+- **C/QEMU 层**：`void *opaque` 是框架不解释的上下文指针；
+- **QOM 层**：它可能指向某个 QOM 设备对象或设备状态；
+- **Rust 层**：它通常表现为 `*mut T` / `*mut c_void`，转成 `&mut T` 时要非常小心别违反 aliasing 规则。
+
+#### Notion 笔记：`void *`、`BqlCell`、`BqlRefCell`、`Opaque` 怎么理解
+
+##### 一句话结论
+
+在 QEMU 的 Rust 代码里，**不要把 C 传来的 `void *` 随手转成 `&mut T`**。
+
+更推荐的思路是：
+
+```text
+C 的 void *
+  -> Rust 里的共享引用 &T / &self
+  -> 需要修改内部状态时，用 BqlCell / BqlRefCell
+  -> 需要直接调用 C 函数时，用 Opaque<T> 转 raw pointer
+```
+
+##### 为什么不要直接转成 `&mut`
+
+`void *` 在 C 里很普通，意思大概是：
+
+```text
+这是一根指针，但当前这层代码不关心它到底指向什么类型。
+```
+
+但 `&mut T` 在 Rust 里不是“普通可写指针”。它表示：
+
+```text
+我现在独占这个 T。
+在这个 &mut T 活着的时候，不能有其他路径同时访问这个对象。
+```
+
+QEMU 的对象经常挂在 QOM（QEMU Object Model，QEMU 对象模型）树里。也就是说，即使某个回调拿到了 `void *opaque`，这个对象也可能还通过 QOM 树被其他地方共享地“看见”。
+
+所以如果直接这样理解：
+
+```text
+void *opaque -> &mut MyDeviceState
+```
+
+就可能等于对 Rust 编译器说：
+
+```text
+我独占这个设备对象。
+```
+
+但实际情况可能是：
+
+```text
+这个设备对象仍然挂在 QOM 树里，并不是真正独占。
+```
+
+这就是文档提醒的核心。
+
+##### 正确的心智模型
+
+更适合 QEMU 的写法是：
+
+```text
+外层对象：用 &self 共享访问
+内部会变的字段：放进特殊容器里
+真正修改时：通过容器控制访问规则
+```
+
+这就是 **interior mutability（内部可变性）**。
+
+通俗地说：
+
+```text
+外壳看起来是共享的，
+但里面某些抽屉允许在规则保护下修改。
+```
+
+##### 三个类型分别干什么
+
+| 类型 | 主要场景 | 可以怎么记 |
+| --- | --- | --- |
+| `BqlCell<T>` | 小字段，例如计数器、标志位、指针值 | “一个小盒子”，每次 get / set 一个值 |
+| `BqlRefCell<T>` | 较大的设备状态，例如一组寄存器 | “一间小房间”，进去以后可以临时读写一批状态 |
+| `Opaque<T>` | C 绑定层，包住底层 C struct | “黑盒包装”，Rust 不直接看里面，只把指针交给 C |
+
+##### `BqlCell` / `BqlRefCell` 为什么带 `Bql`
+
+`BQL` 是 **Big QEMU Lock（大 QEMU 锁）**。
+
+QEMU 里很多设备状态的访问默认依赖这把锁来保护。普通 Rust 的 `Cell` / `RefCell` 只懂 Rust 单线程里的内部可变性；但 QEMU 还需要表达：
+
+```text
+这个字段可以内部修改，
+但访问时应该处在 BQL 保护下。
+```
+
+所以 QEMU 提供了：
+
+```text
+BqlCell      = 带 BQL 规则的 Cell 风格容器
+BqlRefCell   = 带 BQL 规则的 RefCell 风格容器
+```
+
+它们不是为了让代码“绕过 Rust”，而是为了把 QEMU 真实的锁规则告诉 Rust。
+
+##### `vmstate` 为什么认识它们
+
+`vmstate` 可以理解成 QEMU 的“设备状态保存说明书”。
+
+虚拟机迁移、保存、恢复时，QEMU 需要知道：
+
+- 这个设备有哪些状态字段；
+- 每个字段在结构体里的偏移是多少；
+- 每个字段应该怎么保存和恢复。
+
+如果设备结构体长这样：
+
+```rust
+struct MyDevice {
+    counter: BqlCell<u32>,
+    registers: BqlRefCell<MyRegisters>,
+}
+```
+
+`vmstate` 不能只看到外面的 `BqlCell` / `BqlRefCell`，它还要知道里面真正要保存的是：
+
+```text
+u32
+MyRegisters
+```
+
+所以文档说 `vmstate` 能 “look inside them”，意思是：
+
+```text
+vmstate 知道 BqlCell / BqlRefCell 是包装层，
+生成迁移布局时，可以继续看里面真正的数据类型。
+```
+
+普通 `RefCell` 或 `Mutex` 不在这套 QEMU 设备迁移约定里，所以不能随便拿来替换。
+
+##### `Opaque<T>` 是干什么的
+
+`Opaque<T>` 主要用在 Rust 和 C 的交界处。
+
+例如：
+
+```rust
+pub struct Object(Opaque<bindings::Object>);
+```
+
+可以这样理解：
+
+```text
+bindings::Object 是 C 那边的对象布局；
+Rust 不直接把它当普通 Rust struct 操作；
+Rust 只保留一个安全边界外壳；
+需要调用 C 函数时，再拿 raw pointer 出去。
+```
+
+为什么要这样？
+
+- C struct 可能还没完全初始化；
+- C 函数可能通过共享指针修改它；
+- C 侧的生命周期、别名关系、锁规则，Rust 编译器不一定知道；
+- 所以 Rust 不应该随便假设它是一个普通、安全、完整的 Rust 值。
+
+##### 最终怎么记
+
+```text
+写设备逻辑：
+  用 &self + BqlCell / BqlRefCell
+  表达“共享对象里有受 BQL 保护的可变状态”
+
+写 C 绑定层：
+  用 Opaque<T>
+  表达“这是 C 管的底层对象，Rust 只通过 raw pointer 跟它交互”
+
+做迁移状态：
+  vmstate 认识 BqlCell / BqlRefCell
+  能穿过包装看到里面真正要保存的数据
+```
 
 ---
 
@@ -3889,6 +4228,40 @@ graph TD
 the size of the parent object.
 ```
 
+这里还有一个很容易卡住初学者的小点：
+
+- `#Object` 不是 C 预处理器语法，也不是“井号加变量名”
+- 它是 `gtk-doc` 风格的文档交叉引用写法
+- 这里的 `Object` 指的是 `QOM`（QEMU Object Model，QEMU 对象模型）里的基类 `Object`
+
+所以：
+
+```c
+The size of the object (derivative of #Object)
+```
+
+更自然的中文应该读成：
+
+> “这个对象的大小（这里说的是从 `Object` 派生出来的对象实例）”
+
+也就是：
+
+- `instance_size` 描述的是“某个 `QOM` 实例对象”要分配多大内存
+- 这个对象不是随便一个 C `struct`，而是 **继承自 `Object` 的 QOM 对象**
+- 常见情况就是：
+  - 父类结构体把 `Object parent_obj;` 放在开头
+  - 子类结构体在后面继续追加自己的字段
+  - `instance_size = sizeof(子类结构体)`
+
+可以先把关系记成：
+
+```mermaid
+flowchart TD
+    A["QOM 根对象 Object"] --> B["父类型结构体"]
+    B --> C["子类型结构体"]
+    C --> D["instance_size = sizeof(该子类型结构体)"]
+```
+
 这句话说的是 **输入层的省略规则**：源码里的 `TypeInfo.instance_size = 0` 可以表示“我不新增实例字段，沿用父类型实例大小”。
 
 但 `type_initialize()` 里执行的是：
@@ -3922,19 +4295,19 @@ flowchart TD
 - `TypeInfo` 文档说：**原始字段为 0 时，尝试继承父类型实例大小**
 - `type_initialize()` 代码说：**如果继承完以后最终仍然是 0，那就说明这个类型根本没有实例布局，必须是抽象类型**
 
-3. **分配类对象内存，并先把父类那份“继承”下来**
+1. **分配类对象内存，并先把父类那份“继承”下来**
    - `ti->class = g_malloc0(ti->class_size)`
    - 如果有父类，先递归 `type_initialize(parent)`
    - 再 `memcpy(ti->class, parent->class, parent->class_size)`
    - 这一步就是 QOM 类继承的核心：**先拷父类方法表，再让子类覆盖**
 
-4. **补齐接口（interface）对应的类侧信息**
+2. **补齐接口（interface）对应的类侧信息**
    - 先把父类已经有的接口类也带下来
    - 再处理当前类型自己声明的接口
    - 这里会调用 `type_initialize_interface(...)`
    - 所以它不只是“建普通 class”，还负责把接口这条支线也接好
 
-5. **完成类对象的最终初始化**
+3. **完成类对象的最终初始化**
    - 创建 `properties` 哈希表
    - 设置 `ti->class->type = ti`
    - 沿父类链执行 `class_base_init`
