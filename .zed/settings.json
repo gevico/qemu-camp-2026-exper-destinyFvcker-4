@@ -1,0 +1,20 @@
+{
+  "lsp": {
+    "clangd": {
+      "binary": {
+        "arguments": [
+          "--compile-commands-dir=build"
+        ]
+      }
+    },
+    "rust-analyzer": {
+      "initialization_options": {
+        "cargo": {
+          "extraEnv": {
+            "MESON_BUILD_ROOT": "/Users/defv/dev/os-dev/projects/qemu-camp-2026-exper-destinyFvcker-4/build"
+          }
+        }
+      }
+    }
+  }
+}

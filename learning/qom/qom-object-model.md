@@ -93,6 +93,7 @@
   - [`TypeImpl` 速读](#typeimpl-速读)
     - [它到底是什么](#它到底是什么)
     - [最重要的字段](#最重要的字段)
+    - [为什么 `TypeInfo` 里看着像一个 `InterfaceInfo`，到 `TypeImpl` 里却成了数组](#为什么-typeinfo-里看着像一个-interfaceinfo到-typeimpl-里却成了数组)
     - [`struct InterfaceImpl { const char *typename; }` 到底在干什么](#struct-interfaceimpl--const-char-typename--到底在干什么)
     - [为什么它目前只需要一个 `typename`](#为什么它目前只需要一个-typename)
     - [它不是最终接口对象](#它不是最终接口对象)
@@ -116,8 +117,11 @@
       - [3. 这代表了什么](#3-这代表了什么)
       - [4. 为什么这很重要](#4-为什么这很重要)
       - [5. 顺手对比一下：为什么 `Object` / `ObjectClass` 反而放在头文件里](#5-顺手对比一下为什么-object--objectclass-反而放在头文件里)
-    - [`ObjectClass` 是怎么被“制造”出来的](#objectclass-是怎么被制造出来的)
-    - [回到 `qom/object.c:336`：`type_initialize(TypeImpl *ti)` 到底在干什么](#回到-qomobjectc336type_initializetypeimpl-ti-到底在干什么)
+  - [`ObjectClass` 是怎么被“制造”出来的](#objectclass-是怎么被制造出来的)
+    - [`memcpy(ti->class, parent->class, parent->class_size)` 到底在干什么](#memcpyticlass-parentclass-parentclasssize-到底在干什么)
+    - [`class_base_init` 的意义是什么](#class_base_init-的意义是什么)
+    - [为什么这个逻辑由父类定义，而不是交给子类](#为什么这个逻辑由父类定义而不是交给子类)
+  - [回到 `qom/object.c:336`：`type_initialize(TypeImpl *ti)` 到底在干什么](#回到-qomobjectc336type_initializetypeimpl-ti-到底在干什么)
       - [为什么 `instance_size == 0` 会被强制标记为 `abstract`](#为什么-instance_size--0-会被强制标记为-abstract)
     - [看一个真实代码例子：`ObjectClass -> DeviceClass -> PCIDeviceClass`](#看一个真实代码例子objectclass---deviceclass---pcideviceclass)
     - [所以能不能说“`ObjectClass` 也依赖 `TypeInfo` 才能被制造出来”](#所以能不能说objectclass-也依赖-typeinfo-才能被制造出来)
@@ -291,6 +295,57 @@ PCIDevice *
 - **`class` 管“我是什么类型”**
 - **`ref` 管“我还能不能被释放”**
 - **`parent` 管“我挂在哪棵对象树上”**
+
+### `struct Object` 那段注释怎么读
+
+原注释想表达的意思，可以直接翻成：
+
+> `Object` 是所有对象的基类。这个对象的第一个成员是一个指向 `ObjectClass` 的指针。由于 C 语言保证结构体的第一个成员总是从该结构体的第 0 个字节开始，所以只要任何子对象都把自己的父对象放在第一个成员位置，我们就可以直接把它强制转换成 `Object *`。
+>
+> 因此，`Object` 的第一个成员里保存了“这个对象的类型”的引用。这样一来，程序就在运行时识别出这个对象的真实类型。
+
+更适合背诵的中文理解是：
+
+- `Object` 是 **所有 QOM 实例对象共同的头部**
+- 这个头部最关键的字段就是第一个字段 `class`
+- 子类型只要把父结构体放在第一个字段，就能保持“地址不变地向上转型”
+- 所以拿到任意一个 QOM 对象，都能先当成 `Object *` 看，再通过 `obj->class` 去判断它运行时到底是什么类型
+
+### `struct ObjectClass` 那段注释怎么读
+
+原注释可以直接翻成：
+
+> `ObjectClass` 是所有类对象的基类。`ObjectClass` 里唯一包含的东西，就是一个整数类型句柄。
+
+但这句注释 **不能机械照着理解**，因为按当前这份源码，`ObjectClass` 实际定义是：
+
+```c
+struct ObjectClass {
+    Type type;
+    GSList *interfaces;
+    const char *object_cast_cache[OBJECT_CLASS_CAST_CACHE];
+    const char *class_cast_cache[OBJECT_CLASS_CAST_CACHE];
+    ObjectUnparent *unparent;
+    GHashTable *properties;
+};
+```
+
+所以更准确地说：
+
+- `ObjectClass` 是 **所有 QOM 类对象共同的头部**
+- 注释里说的 `integer type handle` 更像是一个 **历史上留下来的概括性说法**
+- 当前代码里的对应字段其实是 `Type type`
+- 而 `Type` 在这里也不是裸整数，它是：
+
+```c
+typedef struct TypeImpl *Type;
+```
+
+也就是说，当前源码里更贴近事实的理解应该是：
+
+- `ObjectClass.type` 持有的是一个 **指向运行时类型元数据 `TypeImpl` 的句柄/引用**
+- 这个字段的作用，确实还是“让类对象知道自己对应哪个类型”
+- 但它不是“`ObjectClass` 里真的只有一个整数字段”
 
 ---
 
@@ -2917,6 +2972,67 @@ flowchart TD
 - 类属性更像“这个类型默认提供什么接口/属性”
 - 实例属性更像“这个具体对象当前挂了什么属性值”
 
+### `ti->class->properties = g_hash_table_new_full(...)` 是在干嘛
+
+在 `qom/object.c` 的 `type_initialize(TypeImpl *ti)` 里有这一句：
+
+```c
+ti->class->properties = g_hash_table_new_full(g_str_hash, g_str_equal, NULL,
+                                              object_property_free);
+```
+
+它的作用可以直接理解成：
+
+- 给这个 **类对象** 新建一张“属性名 -> `ObjectProperty *`”的哈希表
+- 以后这个类型在 `class_init` 之类的阶段注册出来的类级属性，都会放进这张表里
+- 这张表挂在 `ti->class->properties` 上，所以它属于“这个类型的 class”，不是某个具体实例私有的
+
+这四个参数分别表示：
+
+| 参数 | 含义 |
+| --- | --- |
+| `g_str_hash` | key 是字符串，按字符串内容算哈希 |
+| `g_str_equal` | key 是字符串，按字符串内容比较是否相等 |
+| `NULL` | 删除条目时，不额外释放 key |
+| `object_property_free` | 删除条目或销毁整张表时，用它释放 value，也就是 `ObjectProperty *` |
+
+这里最关键的是最后一个参数：
+
+```c
+static void object_property_free(gpointer data)
+{
+    ObjectProperty *prop = data;
+
+    if (prop->defval) {
+        qobject_unref(prop->defval);
+        prop->defval = NULL;
+    }
+    g_free(prop->name);
+    g_free(prop->type);
+    g_free(prop->description);
+    g_free(prop);
+}
+```
+
+所以这句代码不只是“创建一个哈希表”，还顺手规定了这张表的 value 清理规则：
+
+- 表销毁时
+- 或某个属性条目被移除时
+
+对应的 `ObjectProperty` 会被正确释放，避免泄漏。
+
+为什么 key 的销毁函数这里是 `NULL`？
+
+- 因为插入时用的是 `g_hash_table_insert(klass->properties, prop->name, prop)`
+- 也就是 key 本身就是 `prop->name`
+- 而 `object_property_free(prop)` 里已经会 `g_free(prop->name)`
+- 所以如果这里再给 key 单独传一个 `g_free`，就会变成重复释放同一块字符串
+
+可以把它先记成一句话：
+
+- `class->properties` = 这个 QOM 类型共享的“类属性字典”
+- `obj->properties` = 某个具体对象自己的“实例属性字典”
+
 ### `parent` 指针什么时候有值
 
 刚 `object_new(...)` 出来时，通常可以先记：
@@ -3302,6 +3418,79 @@ Object -> DeviceState -> PCIDevice -> EduState
 | `interfaces` | 这个类型实现了哪些接口 |
 | `class` | 该类型共享的类对象缓存 |
 
+### 为什么 `TypeInfo` 里看着像一个 `InterfaceInfo`，到 `TypeImpl` 里却成了数组
+
+这个误会最常见的根源是：看到 `TypeInfo` 里的字段声明是
+
+```c
+const InterfaceInfo *interfaces;
+```
+
+很容易把它脑补成：
+
+- “这里放的是一个 `InterfaceInfo` 指针”
+
+但在 QOM 这里，更准确的理解应该是：
+
+- **这里放的是“接口数组的首元素指针”**
+- **也就是一个 `InterfaceInfo[]` 的入口地址**
+
+因为 `object.h` 紧挨着就写了要求：
+
+- `interfaces` should point to a static array that's terminated with a zero filled element.
+
+也就是说，`TypeInfo.interfaces` 的协议从一开始就是：
+
+- 指向一个静态 `InterfaceInfo` 数组
+- 数组最后用一个全零元素 `{ }` 作为结束标记
+
+典型写法就是：
+
+```c
+.interfaces = (const InterfaceInfo[]) {
+    { INTERFACE_CONVENTIONAL_PCI_DEVICE },
+    { },
+},
+```
+
+所以这里并不是：
+
+- `TypeInfo` 里只有一个接口
+
+而是：
+
+- **`TypeInfo` 用“指针 + sentinel 结尾数组”的形式表达一串接口声明**
+
+到了 `type_new()`，QOM 会把这串外部输入拷进内部结构：
+
+```c
+for (i = 0; info->interfaces && info->interfaces[i].type; i++) {
+    ti->interfaces[i].typename = g_strdup(info->interfaces[i].type);
+}
+ti->num_interfaces = i;
+```
+
+于是内部就变成了：
+
+- `ti->interfaces[MAX_INTERFACES]`
+- `ti->num_interfaces`
+
+也就是：
+
+- **外部注册层：变长数组，靠 `{ }` 结束**
+- **内部运行时层：定长数组，靠 `num_interfaces` 记录实际个数**
+
+为什么内部不继续保留“指针 + sentinel”那一套？
+
+- `TypeInfo` 是外部传进来的静态说明书，适合用 C 常见的“数组首指针”风格描述
+- `TypeImpl` 是 QOM 内部自己的运行时结构，适合拷成一份自己管理的数据
+- 内部有了 `num_interfaces` 之后，后面遍历、继承、去重都更直接，不用每次都扫到 `{ }` 为止
+
+最短记忆版：
+
+- **`TypeInfo.interfaces` 看起来像单个指针，其实语义上是“接口数组入口”**
+- **`TypeImpl.interfaces[]` 才是 QOM 为了内部处理，把这份接口列表落成自己的数组表示**
+
 ### `struct InterfaceImpl { const char *typename; }` 到底在干什么
 
 先给最短答案：
@@ -3548,6 +3737,24 @@ static void rng_backend_class_init(ObjectClass *oc, const void *data)
 - `InterfaceClass`：接口 class 的公共头
 - `UserCreatableClass` / `MemoryDeviceClass` 等：具体接口 class，里面才放虚函数指针
 - `ti->class->interfaces`：挂的是这些具体接口 class 的公共头指针
+
+如果再说得更白一点：
+
+- `ObjectClass.interfaces` 这个 `GSList`
+  - 每个节点的 `data` 放的是一个 `InterfaceClass *`
+- 但这个 `InterfaceClass *` 往往只是“具体接口 class 结构体的公共头”
+- 它背后真实那块内存，常常其实是 `UserCreatableClass *`、`MemoryDeviceClass *` 这种更具体的接口 class
+
+所以这里存进去的不是：
+
+- `TypeImpl *`
+- `InterfaceImpl *`
+- 也不是某个接口“实例对象”
+
+而是：
+
+- **接口 class 对象的指针**
+- 更准确说，是“当前具体类型针对某个接口生成出来的那份接口 class”
 
 ### `ObjectClass.interfaces` 和 `TypeImpl.interfaces[]` 到底是什么关系
 
@@ -4198,6 +4405,206 @@ graph TD
 - **实例继承** 靠的是“父结构体放第一个字段”
 - **类继承 / 方法继承** 靠的是“父类对象先 `memcpy` 到子类对象，再由 `class_init` 覆盖”
 
+### `memcpy(ti->class, parent->class, parent->class_size)` 到底在干什么
+
+先给最短答案：
+
+- **它是在做“类侧继承”**
+- **先把父类已经准备好的 `class` 内容整块拷到子类 `class` 里**
+- **这样子类默认就继承了父类的方法表和基类字段，然后再由后续初始化步骤做修正和覆盖**
+
+这句出现的位置是：
+
+```c
+ti->class = g_malloc0(ti->class_size);
+...
+memcpy(ti->class, parent->class, parent->class_size);
+ti->class->interfaces = NULL;
+```
+
+可以把它理解成：
+
+1. 先给子类分配一块新的 `class` 内存
+2. 把父类那份已经初始化好的 `class` 前半段原样拷进去
+3. 于是子类一上来就“继承”了父类的默认虚函数指针和公共字段
+4. 然后再处理那些不能直接照搬的部分
+
+为什么可以直接拷？
+
+- 因为子类 `class` 结构体在内存布局上是“父类 class 结构体放在最前面，再追加自己的字段”
+- 前面源码也有：
+  - `g_assert(parent->class_size <= ti->class_size);`
+- 这就保证了：
+  - **父类那一段内存布局，正好可以作为子类 `class` 的前缀**
+
+所以这句 `memcpy` 的效果很像：
+
+- “先把父类 vtable 和基类字段整份继承下来”
+
+但它不是最终完成态，因为有两类东西不能机械照搬：
+
+1. **当前类型自己的覆盖**
+   - 后面会跑 `ti->class_init(ti->class, ti->class_data)`
+   - 这里就是子类把自己想改的虚函数槽位重新写掉
+   - 所以常见模式是：
+     - 先继承父类实现
+     - 再覆写少数方法
+
+2. **那些拷了反而不对的“共享指针状态”**
+   - 例如源码紧接着就有：
+     - `ti->class->interfaces = NULL;`
+   - 因为接口链表不能直接和父类共用同一条链
+   - 之后要重新按当前类型的语义生成
+
+这也是为什么 `object.h` 对 `class_base_init` 的注释会专门说：
+
+- 它用来 `undo the effects of memcpy from the parent class to the descendants`
+
+也就是：
+
+- **有些字段先靠 `memcpy` 粗暴继承下来**
+- **但凡这种“直接照搬”不合适，就让 `class_base_init` 在子类真正 `class_init` 前做清理/修正**
+
+最短记忆版：
+
+- **`memcpy` 负责“先继承父类 class 的默认内容”**
+- **`class_base_init` 负责“修正那些不能直接继承的部分”**
+- **`class_init` 负责“写入当前类型自己的最终行为”**
+
+### `class_base_init` 的意义是什么
+
+先给最短答案：
+
+- **`class_base_init` 是“父类给子类做收尾修正”的钩子**
+- **它专门处理那些“被 `memcpy` 继承下来，但不能直接照搬”的类侧状态**
+
+它的调用时机在 `type_initialize()` 里非常关键：
+
+```c
+memcpy(ti->class, parent->class, parent->class_size);
+...
+while (parent) {
+    if (parent->class_base_init) {
+        parent->class_base_init(ti->class, ti->class_data);
+    }
+    parent = type_get_parent(parent);
+}
+
+if (ti->class_init) {
+    ti->class_init(ti->class, ti->class_data);
+}
+```
+
+这个顺序说明三件事：
+
+1. 先把父类 `class` 整份拷进子类 `class`
+2. 再沿父类链执行各层 `class_base_init`
+3. 最后才执行当前类型自己的 `class_init`
+
+所以 `class_base_init` 的位置，不是“普通初始化函数”，而是：
+
+- **夹在“继承父类默认内容”和“写入子类最终内容”之间的修正层**
+
+最容易看懂的是 `DeviceClass` 这个例子：
+
+```c
+static void device_class_base_init(ObjectClass *class, const void *data)
+{
+    DeviceClass *klass = DEVICE_CLASS(class);
+
+    /* We explicitly look up properties in the superclasses,
+     * so do not propagate them to the subclasses.
+     */
+    klass->props_ = NULL;
+    klass->props_count_ = 0;
+}
+```
+
+它的人话就是：
+
+- 父类 `DeviceClass` 里的属性表指针如果被 `memcpy` 到子类
+- 子类就会“直接继承同一份属性表指针”
+- 这不是这里想要的语义
+- 所以 `device_class_base_init()` 主动把这些字段清掉，避免错误传播
+
+也就是说，这里“undo the effects of memcpy” 的含义不是：
+
+- 把 `memcpy` 整体撤销
+
+而是：
+
+- **把那些“不该按位继承”的字段修正回来**
+
+再看两个真实例子：
+
+1. `machine_class_base_init()`
+   - 给 `MachineClass` 的一些字段补默认值，例如 `max_cpus` / `min_cpus` / `default_cpus`
+   - 如果当前类不是抽象类，还会基于类名生成 `mc->name`，并创建新的 `compat_props`
+   - 这说明 `class_base_init` 也可以用来为“每个具体后代 class”补一份独立的类侧状态
+
+2. `pci_device_class_base_init()`
+   - 它会检查一个具体 PCI 设备类是不是至少实现了 `conventional` / `pcie` / `cxl` 这几类接口之一
+   - 这说明 `class_base_init` 还可以拿来做“所有后代都必须满足的基类约束检查”
+
+所以你可以把它理解成：
+
+- `class_init`
+  - “这个类型自己要写什么行为”
+- `class_base_init`
+  - “作为父类，我要对每个后代 class 做哪些修正、清理、兜底或约束检查”
+
+最短记忆版：
+
+- **`memcpy`：先继承**
+- **`class_base_init`：父类视角修正继承结果**
+- **`class_init`：子类视角写入最终实现**
+
+### 为什么这个逻辑由父类定义，而不是交给子类
+
+先给最短答案：
+
+- **因为要修正的是“父类那一层字段被继承后的语义”**
+- **最清楚这些字段该怎么继承、哪些不能继承的，正是定义这些字段的父类自己**
+
+你可以把它拆成两个问题看：
+
+1. “这是谁的字段 / 规则？”
+   - 如果一个字段是 `DeviceClass` 这层引入的
+   - 那么它能不能被子类直接复用、需要不需要清空、要不要为每个后代单独分配
+   - 最懂这件事的是 `DeviceClass`，不是每个具体设备子类
+
+2. “这条规则要对谁生效？”
+   - `DeviceClass` 的规则通常不是只想管某一个子类
+   - 而是想管 **所有后代**
+   - 那就应该挂在父类这里，让每个 descendant 都自动经过这一步
+
+如果反过来交给子类，会有几个问题：
+
+1. **重复**
+   - 每个子类都要记得写一遍类似清理逻辑
+
+2. **容易漏**
+   - 只要有一个子类忘了写，就会错误继承父类按位拷贝下来的状态
+
+3. **子类未必知道基类内部约束**
+   - 子类知道“我要加什么行为”
+   - 但它未必知道父类哪些字段只是缓存、哪些字段不能共享、哪些字段必须重新初始化
+
+4. **无法统一约束所有后代**
+   - 像 `pci_device_class_base_init()` 这种“所有具体 PCI 设备都必须至少实现某类接口”的检查
+   - 如果交给每个子类自己写，就不是“基类规则”了，而变成“靠自觉”
+
+所以更准确的职责边界是：
+
+- `class_base_init`
+  - **父类在说：凡是继承我的人，都先按我的规则把这一层修正好**
+- `class_init`
+  - **子类在说：在继承并修正完成后，我再写我自己的最终实现**
+
+最适合记忆的一句话是：
+
+- **谁定义了这一层字段和不变量，谁就负责这层字段的继承修正。**
+
 ### 回到 `qom/object.c:336`：`type_initialize(TypeImpl *ti)` 到底在干什么
 
 可以先把它理解成一句话：
@@ -4312,6 +4719,113 @@ flowchart TD
    - 设置 `ti->class->type = ti`
    - 沿父类链执行 `class_base_init`
    - 最后执行当前类型自己的 `class_init`
+
+### 单看这段 `if (parent) { ... }`，它其实只做三件事
+
+```c
+parent = type_get_parent(ti);
+if (parent) {
+    type_initialize(parent);
+    ...
+    memcpy(ti->class, parent->class, parent->class_size);
+    ti->class->interfaces = NULL;
+    ...
+}
+```
+
+如果你先不管细节，这段代码的人话可以压缩成：
+
+1. **先保证父类已经准备好**
+   - `type_initialize(parent);`
+   - 因为子类要“继承”父类的 class 内容，所以父类自己的 `class` 必须先初始化完成
+
+2. **把父类 class 先拷到子类 class 里**
+   - `memcpy(ti->class, parent->class, parent->class_size);`
+   - 这一步相当于：
+     - 先把父类已经有的默认方法表
+     - 父类那层公共 class 字段
+     - 一次性复制到子类 class 里
+   - 然后子类后面再基于这份“父类模板”做修正和覆盖
+
+3. **把“接口继承结果”重新建一遍**
+   - 先 `ti->class->interfaces = NULL;`
+   - 然后：
+     - 把父类已经挂好的接口 class 逐个接到当前类型上
+     - 再把当前类型自己声明的接口也接上去
+   - 这里不是简单复制链表指针，而是通过 `type_initialize_interface(...)` 为“当前类型 + 某接口”重新生成对应的接口 class
+
+最短记忆版：
+
+- **父类先初始化**
+- **父类 class 内容先复制下来**
+- **接口这部分单独按当前类型重新搭好**
+
+### 为什么 `interfaces` 不能跟着 `memcpy` 直接继承完事
+
+因为 `interfaces` 不是“一个普通可共享的小字段”，而是：
+
+- `ti->class->interfaces`
+  - 挂的是“这个具体类型最终拥有的接口 class 链表”
+
+而 `type_initialize_interface(ti, ..., ...)` 做的不是简单登记名字，它会为：
+
+- **当前类型 `ti`**
+- **当前接口 `interface_type`**
+
+这个组合创建出一份新的接口 class，然后挂到当前 `ti->class->interfaces` 上。
+
+所以这里必须先：
+
+```c
+ti->class->interfaces = NULL;
+```
+
+再重新构建，否则就会把父类原来的接口链表指针直接抄过来，语义不对。
+
+### 两个 `for` 循环分别在补哪两类接口
+
+第一个循环：
+
+```c
+for (e = parent->class->interfaces; e; e = e->next) {
+    ...
+    type_initialize_interface(ti, iface->interface_type, klass->type);
+}
+```
+
+它处理的是：
+
+- **父类已经有的接口结果**
+- 也就是“从父类继承来的接口”
+
+第二个循环：
+
+```c
+for (i = 0; i < ti->num_interfaces; i++) {
+    TypeImpl *t = type_get_by_name_noload(ti->interfaces[i].typename);
+    ...
+    type_initialize_interface(ti, t, t);
+}
+```
+
+它处理的是：
+
+- **当前类型自己在 `TypeInfo.interfaces` 里声明的接口**
+
+并且这里还会先检查一遍：
+
+- 这个接口名字能不能解析成 `TypeImpl`
+- 当前 `ti->class->interfaces` 里是不是已经有同祖先链上的接口了
+
+如果已经有了：
+
+```c
+if (e) {
+    continue;
+}
+```
+
+就不重复加。
 
 可以画成：
 

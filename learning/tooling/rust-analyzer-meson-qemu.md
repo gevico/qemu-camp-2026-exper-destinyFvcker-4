@@ -157,6 +157,80 @@ error[E0432]: unresolved import `hwcore_sys`
 }
 ```
 
+### 对应的 Zed 配置怎么写
+
+如果想在 **项目级** 配置里实现同等效果，通常把设置写到：
+
+```text
+.zed/settings.json
+```
+
+和 VS Code 不同，Zed 主要通过 `lsp` 节来配置语言服务器，而且 `rust-analyzer` 的配置要写成**嵌套对象**，不是 VS Code 那种点号风格。
+
+如果你想对应上面这组“开启 `linkedProjects`”的 VS Code 配置，可以写成：
+
+```json
+{
+  "lsp": {
+    "clangd": {
+      "binary": {
+        "arguments": [
+          "--compile-commands-dir=build-rust"
+        ]
+      }
+    },
+    "rust-analyzer": {
+      "initialization_options": {
+        "linkedProjects": [
+          "./build-rust/rust-project.json"
+        ],
+        "cargo": {
+          "extraEnv": {
+            "MESON_BUILD_ROOT": "/绝对路径/到/你的仓库/build-rust"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+如果你只是想对应下面这种**不启用 `linkedProjects`**、只保留 `clangd + MESON_BUILD_ROOT` 的轻量配置，那么可以写成：
+
+```json
+{
+  "lsp": {
+    "clangd": {
+      "binary": {
+        "arguments": [
+          "--compile-commands-dir=build-rust"
+        ]
+      }
+    },
+    "rust-analyzer": {
+      "initialization_options": {
+        "cargo": {
+          "extraEnv": {
+            "MESON_BUILD_ROOT": "/绝对路径/到/你的仓库/build-rust"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+可以这样做映射理解：
+
+- `clangd.arguments` → `lsp.clangd.binary.arguments`
+- `rust-analyzer.linkedProjects` → `lsp.rust-analyzer.initialization_options.linkedProjects`
+- `rust-analyzer.cargo.extraEnv` → `lsp.rust-analyzer.initialization_options.cargo.extraEnv`
+
+还有两点容易踩坑：
+
+- Zed 这里不要写 VS Code 风格的 `${workspaceFolder}`；`linkedProjects` 更适合直接写相对路径，`MESON_BUILD_ROOT` 更稳妥的写法是绝对路径。
+- `cmake.ignoreCMakeListsMissing` 在 Zed 里通常**没有直接对应项**，因为它主要是 VS Code 的 CMake Tools 扩展行为；Zed 默认不会因为仓库里没有 `CMakeLists.txt` 就弹这个级别的提示。
+
 ## 为什么这个配置有效
 
 `build-rust/rust-project.json` 是 Meson 生成的 Rust 项目图，里面包含：
