@@ -32,13 +32,13 @@ typedef struct ObjectProperty ObjectProperty;
 
 /**
  * typedef ObjectPropertyAccessor:
- * @obj: the object that owns the property
- * @v: the visitor that contains the property data
- * @name: the name of the property
- * @opaque: the object property opaque
- * @errp: a pointer to an Error that is filled if getting/setting fails.
+ * @obj: 拥有该属性的对象
+ * @v: 包含属性数据的访问者
+ * @name: 属性的名称
+ * @opaque: 对象属性的不透明指针
+ * @errp: 指向 Error 的指针，当获取/设置失败时会被填充。
  *
- * Called when trying to get/set a property.
+ * 在尝试获取/设置属性时调用。
  */
 typedef void(ObjectPropertyAccessor)(Object *obj, Visitor *v, const char *name,
                                      void *opaque, Error **errp);
